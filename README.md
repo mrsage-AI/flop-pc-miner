@@ -17,6 +17,8 @@
 
 </div>
 
+> **Fork credit:** this is a fork of [Makabeez/flop-pc-miner](https://github.com/Makabeez/flop-pc-miner) (MIT) — all credit for the original Windows/WSL2 setup, the security model and the dashboard goes to [@Makabeez](https://github.com/Makabeez). This fork adds native Linux support (`linux/install.sh`, WSL-free `flop-miner.sh` v2.0.0); everything Windows works exactly as upstream wrote it.
+
 > **It works.** This setup runs a home RTX 5080 miner (`5ECEvG31…ffKvW`, Soft tier, 28 GFLOP/s cap). After Flop Labs' fix on 8 Nov 2026, **11 of the next 13 gateway sessions settled on chain within 5½ hours, including every one of the last 10 (6.43 test FLOP)**. The first settlement was [`0x65e921ec…a3be`](https://explorer.devnet.flop.network/transactions/0x65e921ec5cb965e88b712a2d552d5194a550e21a785b3229cceecfea188ba3be): 134 GFLOP served, 0.8138 FLOP to the miner. Every error that came up on the way, and its fix, is in [Troubleshooting](#troubleshooting).
 
 > **Devnet only.** Devnet FLOP has no value. Flop Labs says devnet mining earns no rewards and no airdrop weight, and the chain may be reset. Do it to learn, to test, and to be an early working miner. Not affiliated with Flop Labs.
