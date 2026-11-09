@@ -2,7 +2,7 @@
 
 <img src="docs/banner.svg" alt="flop-pc-miner" width="100%"/>
 
-**Run a FLOP devnet miner on your own Windows gaming PC: one dedicated WSL distro, official images only, double-click start and stop, and a live desktop widget.**
+**Run a FLOP devnet miner on your own gaming PC: Windows (WSL2) with double-click start and stop, or native Linux in a terminal, official images only, and a live dashboard.**
 
 [![Live miner](https://img.shields.io/badge/LIVE%20MINER-explorer-3ddc97?style=for-the-badge)](https://explorer.devnet.flop.network/account/5ECEvG31hJ6jprGcAYRHMchj98k4c4A3RAGvNqGynx4ffKvW)
 [![First settlement](https://img.shields.io/badge/FIRST%20SETTLEMENT-tx-21c7f2?style=for-the-badge)](https://explorer.devnet.flop.network/transactions/0x65e921ec5cb965e88b712a2d552d5194a550e21a785b3229cceecfea188ba3be)
@@ -29,14 +29,15 @@
 4. [Security: what runs, what is exposed](#security-what-runs-what-is-exposed)
 5. [How it fits together](#how-it-fits-together)
 6. [Install, step by step](#install-step-by-step)
-7. [Daily use](#daily-use)
-8. [The dashboard and widget](#the-dashboard-and-widget)
-9. [Is it working? Am I getting paid?](#is-it-working-am-i-getting-paid)
-10. [Settings](#settings)
-11. [Troubleshooting](#troubleshooting)
-12. [Updating and uninstalling](#updating-and-uninstalling)
-13. [FAQ](#faq)
-14. [Credits](#credits)
+7. [Install on native Linux, step by step](#install-on-native-linux-step-by-step)
+8. [Daily use](#daily-use)
+9. [The dashboard and widget](#the-dashboard-and-widget)
+10. [Is it working? Am I getting paid?](#is-it-working-am-i-getting-paid)
+11. [Settings](#settings)
+12. [Troubleshooting](#troubleshooting)
+13. [Updating and uninstalling](#updating-and-uninstalling)
+14. [FAQ](#faq)
+15. [Credits](#credits)
 
 ---
 
@@ -205,6 +206,75 @@ Double-click **FLOP Miner - Start** on your Desktop. It asks for your Linux pass
 
 In the first few hours the network runs **calibration**: a burst of test jobs that measures your GPU and records a cap (GFLOP/s) and a tier on chain. On the test PC it took about 3 hours from registration. After that, the gateway starts opening sessions with you.
 
+## Install on native Linux, step by step
+
+If you already run Linux on the PC (Ubuntu 24.04-class, or a 24.04-based derivative like Pop!_OS), skip WSL entirely: the same `flop-miner.sh` runs natively, with the same commands, the same security model and the same official images. Allow about an hour, most of it downloading.
+
+### 0. Linux prerequisites
+
+1. Install the latest **NVIDIA driver** for your GPU (`ubuntu-drivers`, or nvidia.com). Do **not** install the driver inside Docker; the host driver is shared with the containers.
+2. Check the GPU is visible:
+
+```bash
+nvidia-smi -L
+```
+
+### 1. Get this repo and run the installer
+
+```bash
+cd ~/Downloads
+git clone https://github.com/Makabeez/flop-pc-miner.git
+cd flop-pc-miner
+./linux/install.sh
+```
+
+The installer checks the host and the GPU, copies `flop-miner.sh` and `flop-dash.py` into your home directory (it prints the sha1 of each copied file) and downloads nothing. Re-run it any time to update.
+
+### 2. Install Docker and the NVIDIA toolkit
+
+```bash
+cd
+./flop-miner.sh prereqs
+```
+
+It uses `sudo` to add Docker's and NVIDIA's official signed apt repositories, then runs `nvidia-smi -L` inside a container, which must list your GPU.
+
+### 3. Set up the miner
+
+Pick a public worker name, then run setup:
+
+```bash
+WORKER_NAME=yourname-5080 ./flop-miner.sh setup
+```
+
+What `setup` does, in order:
+
+1. Reads `releases.json`, checks every image reference, and picks the model and decode policy.
+2. Writes `/opt/flop-miner/miner.env` (mode 600) with random 64-character API and session tokens.
+3. Pulls the images by digest. This takes a while: about 23 GB.
+4. Generates your miner key and prints the **miner address**.
+5. Asks Flop's **stake sponsor** for a stake, then waits as long as the sponsor asks between tries. The sponsor can be busy or full: at most 40 uncalibrated miners at a time. Pressing Ctrl+C is safe; continue later with `./flop-miner.sh sponsor`.
+6. Downloads the model with Flop's CLI, which checks every file against the on-chain record.
+7. Installs cloudflared and the `flop-tunnel` service.
+
+### 4. Lock things down (recommended)
+
+```bash
+./flop-miner.sh harden
+```
+
+### 5. Start mining
+
+```bash
+./flop-miner.sh up
+```
+
+It starts the tunnel (a fresh `https://….trycloudflare.com` address each time), loads the model onto the GPU, starts the worker, which publishes your address to Flop's mailbox. `./flop-miner.sh status` shows everything on chain and off.
+
+In the first few hours the network runs **calibration**: a burst of test jobs that measures your GPU and records a cap (GFLOP/s) and a tier on chain. After that, the gateway starts opening sessions with you.
+
+> **Devnet only, here too.** Same warning as on Windows: devnet FLOP has no value, and unanswered network test jobs expire after 600 blocks and **cut your sponsored stake** — run `./flop-miner.sh down` before switching the PC off.
+
 ## Daily use
 
 | Shortcut | What it does |
@@ -224,6 +294,8 @@ powercfg /change standby-timeout-ac 0
 ```
 
 The screen can still turn off.
+
+On native Linux there are no Desktop shortcuts: you run `./flop-miner.sh up` in a terminal to start a mining session, and everything keeps running until you run `./flop-miner.sh down` or switch the PC off. **`down` before shutdown still applies** — the dashboard (`./flop-miner.sh status`, or `flop-dash.py` on `127.0.0.1:8650`) tells you within seconds if something stops.
 
 ## The dashboard and widget
 

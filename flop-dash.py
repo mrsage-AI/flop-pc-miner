@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""flop-dash.py - live local dashboard for the FLOP devnet miner (WSL distro "flop-miner"), part of flop-pc-miner.
+"""flop-dash.py - live local dashboard for the FLOP devnet miner (native Linux host), part of flop-pc-miner.
 
 Serves one page at http://127.0.0.1:8650 (this PC only). Python standard library only.
 Reads: nvidia-smi (GPU), docker compose (containers + worker log), systemctl (tunnel),
@@ -358,7 +358,7 @@ const shortErr=e=>/TOPLOC activation commitment/.test(e)?'V2 leaf can’t bind T
 // favicon dot = overall health
 function favicon(color){try{const c=document.createElement('canvas');c.width=c.height=32;const x=c.getContext('2d');x.fillStyle='#0A1128';x.fillRect(0,0,32,32);x.fillStyle=color;x.beginPath();x.arc(16,16,11,0,7);x.fill();$('fav').href=c.toDataURL()}catch(e){}}
 
-// alerts: in-page toast + sound + tab-title flash always work; a Windows notification is added when Edge allows it
+// alerts: in-page toast + sound + tab-title flash always work; a browser notification is added when the browser allows it
 let alertsOn=false;try{alertsOn=localStorage.getItem('flopAlerts')==='1'}catch(e){}
 const canDesk=()=>{try{return 'Notification' in window&&Notification.permission==='granted'}catch(e){return false}};
 const deskState=()=>{try{return 'Notification' in window?Notification.permission:'unsupported'}catch(e){return 'unsupported'}};
@@ -366,8 +366,8 @@ function paintAlerts(){const b=$('alerts'),ds=deskState();
  b.textContent=!alertsOn?'🔕 alerts off':canDesk()?'🔔 alerts on · desktop + sound':'🔔 alerts on · sound';
  b.classList.toggle('on',alertsOn);b.classList.toggle('blocked',alertsOn&&ds==='denied');
  b.title=!alertsOn?'Click to turn on alerts for settlements, failures and outages'
-  :ds==='denied'?'Sound and on-screen alerts are on. Windows pop-ups are blocked for this page: allow them in Edge (padlock › Notifications › Allow)'
-  :canDesk()?'Sound, on-screen and Windows alerts are on. Click to turn off':'Sound and on-screen alerts are on. Click to turn off'}
+  :ds==='denied'?'Sound and on-screen alerts are on. Browser pop-ups are blocked for this page: allow them in your browser (padlock › Notifications › Allow)'
+  :canDesk()?'Sound, on-screen and browser alerts are on. Click to turn off':'Sound and on-screen alerts are on. Click to turn off'}
 let actx=null;
 function beep(kind){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();
  const notes=kind==='good'?[660,880,1320]:kind==='bad'?[440,330]:[700];let t=actx.currentTime+0.02;
@@ -384,9 +384,9 @@ $('alerts').onclick=async()=>{
  if(alertsOn){alertsOn=false}else{alertsOn=true;
   if(deskState()==='default'){try{await Notification.requestPermission()}catch(e){}}
   const ds=deskState();
-  notify('FLOP: alerts are on',ds==='granted'?'Test alert: you should hear a chime and see a Windows pop-up.'
-   :ds==='denied'?'Chime + on-screen alerts work. Windows pop-ups are blocked: click the padlock left of the address › Notifications › Allow, then reload.'
-   :'Chime + on-screen alerts work. For Windows pop-ups, open the dashboard in a normal Edge tab and allow notifications.','good')}
+  notify('FLOP: alerts are on',ds==='granted'?'Test alert: you should hear a chime and see a browser pop-up.'
+   :ds==='denied'?'Chime + on-screen alerts work. Browser pop-ups are blocked: click the padlock left of the address › Notifications › Allow, then reload.'
+   :'Chime + on-screen alerts work. For browser pop-ups, open the dashboard in a normal browser tab and allow notifications.','good')}
  try{localStorage.setItem('flopAlerts',alertsOn?'1':'0')}catch(e){}paintAlerts()};
 paintAlerts();
 $('widget').onclick=()=>window.open('/?mini=1','flopwidget','popup,width=430,height=640');

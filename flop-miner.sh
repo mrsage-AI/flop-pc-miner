@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# flop-miner.sh — FLOP devnet GPU miner on a Windows PC with an NVIDIA GPU, in a dedicated WSL2 distro "flop-miner".
-# https://github.com/Makabeez/flop-pc-miner  (MIT). Tested on an RTX 5080 (16 GB), Windows 11, Ubuntu 24.04.
+# flop-miner.sh v2.0.0 — FLOP devnet GPU miner on a native Linux PC with an NVIDIA GPU (Ubuntu 24.04-class).
+# https://github.com/Makabeez/flop-pc-miner  (MIT). Tested on an RTX 5080 (16 GB), Ubuntu 24.04, Docker Engine.
 #
 # Trust model (everything below is checked by this script, nothing is taken from third parties):
 #   - Container images: only ghcr.io/flop-labs/flop-core/* (the official github.com/flop-labs org),
@@ -15,7 +15,7 @@
 #
 #   ./flop-miner.sh prereqs   once, first: Docker Engine + NVIDIA Container Toolkit from their official apt repos
 #   ./flop-miner.sh setup     once: verify official release list, settings, images, key, sponsor, model, tunnel
-#   ./flop-miner.sh harden    once, after setup: cut this distro off from your Windows files and programs
+#   ./flop-miner.sh harden    once, after setup: audit the miner's exposure (localhost-only ports, firewall)
 #   ./flop-miner.sh up        each session: tunnel -> new HTTPS address -> backend -> worker
 #   ./flop-miner.sh status    chain status, calibration, tunnel, GPU power, last worker lines
 #   ./flop-miner.sh logs      follow the worker log (Ctrl+C leaves the log; the miner keeps running)
@@ -41,7 +41,7 @@ MODEL_SLUG=qwen/qwen2.5-0.5b-instruct
 GPU_UTIL_ARG="${GPU_UTIL:-}"; WORKER_NAME_ARG="${WORKER_NAME:-}"   # only override saved values when given
 GPU_UTIL="${GPU_UTIL:-0.6}"
 WORKER_NAME="${WORKER_NAME:-flop-pc-miner}"   # public label; choose yours: WORKER_NAME=alice-4090 ./flop-miner.sh setup
-VERSION=1.0.0
+VERSION=2.0.0
 # CLI v0.1.290 reports a verified model without an "ok" field, so the model check also accepts
 # verified_root == MODEL_HASH (the root the CLI recomputed from the files, compared with the chain).
 # Floor for the CLI image. On 7 Nov 2026 the chain moved to runtime spec 1014014 while releases.json still
@@ -52,11 +52,11 @@ MIN_CLI=ghcr.io/flop-labs/flop-core/cli:v0.1.290@sha256:24e32b034b0d3600ee28127d
 die()  { echo "error: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
 
-: "${USER:=$(id -un)}"   # not always set when WSL runs a command without a login shell
-[ "${WSL_DISTRO_NAME:-}" = flop-miner ] || die "run this inside the flop-miner WSL distro (this is: ${WSL_DISTRO_NAME:-not WSL})"
+: "${USER:=$(id -un)}"   # not always set in non-login shells
+[ "$(uname -s)" = Linux ] || die "this is for native Linux (Ubuntu 24.04-class + NVIDIA); this is: $(uname -s)"
 need_docker() {
-  command -v docker >/dev/null || die "docker is not installed in this distro yet: run ./flop-miner.sh prereqs"
-  docker info >/dev/null 2>&1 || die "docker needs sudo here: in PowerShell run 'wsl --terminate flop-miner', reopen the distro, retry"
+  command -v docker >/dev/null || die "docker is not installed yet: run ./flop-miner.sh prereqs"
+  docker info >/dev/null 2>&1 || die "docker needs sudo here: log out and back in (the docker group applies at login), retry"
 }
 
 envget()  { grep "^$1=" "$D/miner.env" | head -n 1 | cut -d= -f2-; }
@@ -139,12 +139,12 @@ services:
 volumes:
   worker-data:
 
-# WSL's own network link can be smaller than Docker's default 1500-byte packets (1280 on the test PC).
+# A VPN or constrained link can run a smaller MTU than Docker's default 1500-byte packets.
 # Without matching it, TLS/WebSocket connections from the miner network stall and drop (1006).
 networks:
   default:
     driver_opts:
-      com.docker.network.driver.mtu: "${NET_MTU:-1280}"
+      com.docker.network.driver.mtu: "${NET_MTU:-1500}"
 EOF
 }
 
@@ -207,10 +207,9 @@ sponsor_once() {
 
 cmd_prereqs() {
   # Docker Engine (download.docker.com) and NVIDIA Container Toolkit (nvidia.github.io), each from its
-  # official signed apt repository, following their install guides. No Docker Desktop needed.
-  grep -q 'Ubuntu' /etc/os-release || die "this expects an Ubuntu distro (wsl --install Ubuntu-24.04 --name flop-miner)"
-  [ -e /usr/lib/wsl/lib/libcuda.so.1 ] || [ -e /usr/lib/wsl/lib/libcuda.so ] \
-    || die "no NVIDIA GPU driver visible from WSL: install the latest NVIDIA driver on Windows, then wsl --shutdown"
+  # official signed apt repository, following their install guides.
+  grep -q 'Ubuntu' /etc/os-release || die "this expects an Ubuntu 24.04-class host"
+  nvidia-smi -L >/dev/null 2>&1 || die "no NVIDIA GPU visible on the host (nvidia-smi -L): install the latest NVIDIA driver"
   step "Docker Engine (official apt repository)"
   sudo apt-get update -qq && sudo apt-get install -y -qq ca-certificates curl gnupg jq openssl >/dev/null
   sudo install -m 0755 -d /etc/apt/keyrings
@@ -234,7 +233,7 @@ cmd_prereqs() {
   step "GPU inside Docker"
   sudo docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L || die "Docker cannot see the GPU (see the guide's troubleshooting)"
   echo
-  echo "prereqs done. In PowerShell: wsl --terminate flop-miner, reopen the distro, then: ./flop-miner.sh setup"
+  echo "prereqs done. Log out and back in (the docker group applies at login), then: ./flop-miner.sh setup"
 }
 
 cmd_setup() {
@@ -354,34 +353,44 @@ PrivateTmp=yes
 EOF
   sudo systemctl daemon-reload
   echo
-  echo "setup done. Next: ./flop-miner.sh harden (then reopen the distro), then ./flop-miner.sh up"
+  echo "setup done. Next: ./flop-miner.sh harden, then ./flop-miner.sh up"
 }
 
 cmd_harden() {
-  # Cut this distro off from Windows: no C:\ drive under /mnt, no launching .exe files, no Windows PATH.
-  # The GPU keeps working (it comes through /usr/lib/wsl, not /mnt/c); the check below proves it.
-  sudo tee /etc/wsl.conf >/dev/null <<'EOF'
-[boot]
-systemd=true
-
-[automount]
-enabled=false
-mountFsTab=false
-
-[interop]
-enabled=false
-appendWindowsPath=false
-EOF
-  echo "written /etc/wsl.conf. Now in PowerShell: wsl --terminate flop-miner, reopen the flop-miner terminal, then:"
-  echo "  ls /mnt/c 2>&1 | head -1      # must fail or be empty"
-  echo "  docker run --rm --gpus all nvidia/cuda:13.0.1-base-ubuntu22.04 nvidia-smi -L   # must list your GPU"
-  echo "To undo: sudo rm /etc/wsl.conf, then terminate the distro again (Ubuntu 24.04 keeps systemd on by default)."
+  # Native posture check: nothing may be published beyond loopback; the only public entry is the
+  # outbound Cloudflare tunnel. Prints what is listening and how to lock the firewall down.
+  step "docker published ports (every mapping must be 127.0.0.1)"
+  local ports; ports=$(docker ps --format '{{.Names}}\t{{.Ports}}')
+  if [ -n "$ports" ]; then echo "$ports" | sed 's/^/  /'; else echo "  no containers running (./flop-miner.sh up starts them)"; fi
+  [ -z "$(docker ps --format '{{.Ports}}' | grep -- '->' | grep -v '^127\.0\.0\.1:' || true)" ] \
+    || die "a container publishes a port beyond 127.0.0.1: fix the ports: section in $D/docker-compose.yml"
+  step "host listeners (worker 8645, dashboard 8650)"
+  local listen; listen=$(ss -ltn 2>/dev/null | awk 'NR>1 {print $4}' | grep -E ':(8645|8650)$' || true)
+  if [ -n "$listen" ]; then echo "$listen" | sed 's/^/  /'; else echo "  neither the worker nor the dashboard is listening yet"; fi
+  [ -z "$(printf '%s\n' "$listen" | grep -v '^127\.0\.0\.1:' || true)" ] \
+    || die "a miner port listens beyond 127.0.0.1: $listen"
+  step "firewall"
+  echo "  the miner needs no inbound ports: the tunnel is an outbound connection."
+  if command -v ufw >/dev/null; then
+    sudo ufw status | head -n 1
+    echo "  recommended: sudo ufw default deny incoming && sudo ufw enable"
+  else
+    echo "  ufw not installed; ensure no inbound rule allows 8645/8650, or: sudo ufw default deny incoming && sudo ufw enable"
+  fi
+  echo
+  echo "harden done: worker and dashboard must stay on 127.0.0.1; rerun this after any compose change."
 }
 
 cmd_up() {
   address >/dev/null
-  # Match the miner network's packet size to WSL's link (eth0) and refresh the compose file.
-  envset NET_MTU "$(cat /sys/class/net/eth0/mtu 2>/dev/null || echo 1280)"
+  # Match the miner network's packet size to the default-route interface's MTU when it is below
+  # Docker's default (1500), and refresh the compose file.
+  local ifc mtu
+  ifc=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+  mtu=1500
+  [ -z "$ifc" ] || mtu=$(cat "/sys/class/net/$ifc/mtu" 2>/dev/null || echo 1500)
+  [ "$mtu" -lt 1500 ] || mtu=1500
+  envset NET_MTU "$mtu"
   grep -q '^SESSION_COMMIT_IDS=' "$D/miner.env" || envset SESSION_COMMIT_IDS 1
   write_compose
   compose config -q || die "docker-compose.yml did not validate"
@@ -423,7 +432,7 @@ cmd_up() {
     compose stop worker; die "worker signed as $signer, not your miner $(address); stopped it"
   fi
   echo
-  echo "mining. You can close this window: the miner keeps running until ./flop-miner.sh down (Stop shortcut)."
+  echo "mining. You can close this window: the miner keeps running until ./flop-miner.sh down."
 }
 
 cmd_status() {
@@ -447,7 +456,7 @@ apply_worker_setting() {
   compose config -q || die "docker-compose.yml did not validate"
   if ! compose ps --status running --services 2>/dev/null | grep -qx worker \
      || ! systemctl is-active -q flop-tunnel; then
-    echo "Saved. The miner is not fully running, so nothing was restarted: it applies at the next ./flop-miner.sh up (Start shortcut)."
+    echo "Saved. The miner is not fully running, so nothing was restarted: it applies at the next ./flop-miner.sh up."
     return
   fi
   compose up -d --no-deps --force-recreate worker
